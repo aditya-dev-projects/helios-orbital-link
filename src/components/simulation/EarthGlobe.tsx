@@ -124,22 +124,25 @@ function BeamLine({ targetCity, altitude }: { targetCity: string; altitude: numb
     return curve.getPoints(50);
   }, [result, targetCity, altitude]);
 
+  const lineRef = useRef<any>(null);
+
   useFrame(({ clock }) => {
-    if (beamRef.current) {
-      const mat = beamRef.current.material as THREE.LineBasicMaterial;
-      mat.opacity = 0.4 + Math.sin(clock.getElapsedTime() * 3) * 0.3;
+    if (lineRef.current) {
+      lineRef.current.material.opacity = 0.4 + Math.sin(clock.getElapsedTime() * 3) * 0.3;
     }
   });
 
   if (!points) return null;
 
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
   return (
-    <>
-      <line ref={beamRef as any} geometry={geometry}>
-        <lineBasicMaterial color="#f59e0b" transparent opacity={0.7} linewidth={2} />
-      </line>
+    <group>
+      <primitive
+        ref={lineRef}
+        object={new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color: '#f59e0b', transparent: true, opacity: 0.7 })
+        )}
+      />
       {/* Target point glow */}
       <mesh position={points[points.length - 1]}>
         <sphereGeometry args={[0.04, 16, 16]} />
