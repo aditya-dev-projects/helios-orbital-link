@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState } from 'react';
-import { Canvas, useFrame, useLoader, extend } from '@react-three/fiber';
-import { OrbitControls, Stars, Html, Sphere } from '@react-three/drei';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { OrbitControls, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store/simulationStore';
 import { getCityCoords } from '@/lib/simulation';
@@ -27,7 +27,7 @@ function latLngToVector3(lat: number, lng: number, radius: number): THREE.Vector
   );
 }
 
-const SUN_POS = new THREE.Vector3(30, 6, -25);
+const SUN_POS = new THREE.Vector3(0, 0, 0); // Sun at center of solar system
 
 /* ─── Sun – large, glowing, realistic ─── */
 function Sun() {
@@ -43,7 +43,6 @@ function Sun() {
     canvas.height = 512;
     const ctx = canvas.getContext('2d')!;
 
-    // Radial gradient for sun surface
     const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
     grad.addColorStop(0, '#FFFFFF');
     grad.addColorStop(0.15, '#FFF8DC');
@@ -55,7 +54,6 @@ function Sun() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
-    // Add some surface noise/spots
     for (let i = 0; i < 200; i++) {
       const x = Math.random() * 512;
       const y = Math.random() * 512;
@@ -86,44 +84,33 @@ function Sun() {
 
   return (
     <group position={SUN_POS}>
-      {/* Core sun sphere with procedural texture */}
       <mesh ref={coreRef}>
-        <sphereGeometry args={[4, 64, 64]} />
+        <sphereGeometry args={[3, 64, 64]} />
         <meshBasicMaterial map={sunTexture} />
       </mesh>
-
-      {/* Inner hot glow */}
       <mesh ref={glow1Ref}>
-        <sphereGeometry args={[4.4, 48, 48]} />
+        <sphereGeometry args={[3.3, 48, 48]} />
         <meshBasicMaterial color="#FFD700" transparent opacity={0.35} />
       </mesh>
-
-      {/* Mid corona glow */}
       <mesh ref={glow2Ref}>
-        <sphereGeometry args={[5.5, 48, 48]} />
+        <sphereGeometry args={[4.2, 48, 48]} />
         <meshBasicMaterial color="#FFA500" transparent opacity={0.15} />
       </mesh>
-
-      {/* Outer corona */}
       <mesh ref={glow3Ref}>
-        <sphereGeometry args={[7, 48, 48]} />
+        <sphereGeometry args={[5.5, 48, 48]} />
         <meshBasicMaterial color="#FF8C00" transparent opacity={0.06} />
       </mesh>
-
-      {/* Faint outermost halo */}
       <mesh>
-        <sphereGeometry args={[9, 32, 32]} />
+        <sphereGeometry args={[7, 32, 32]} />
         <meshBasicMaterial color="#FF6600" transparent opacity={0.025} />
       </mesh>
-
-      {/* Corona rays */}
       <group ref={coronaRef}>
         {Array.from({ length: 20 }).map((_, i) => {
           const angle = (i / 20) * Math.PI * 2;
-          const len = 5 + Math.random() * 4;
+          const len = 4 + Math.random() * 3;
           return (
-            <mesh key={i} rotation={[0, 0, angle]} position={[0, 0, 0]}>
-              <planeGeometry args={[0.12, len]} />
+            <mesh key={i} rotation={[0, 0, angle]}>
+              <planeGeometry args={[0.1, len]} />
               <meshBasicMaterial
                 color="#FFD700"
                 transparent
@@ -134,15 +121,39 @@ function Sun() {
           );
         })}
       </group>
-
-      {/* Sun light – main scene illumination */}
-      <pointLight color="#FFF5E0" intensity={150} distance={120} decay={2} />
+      <pointLight color="#FFF5E0" intensity={200} distance={200} decay={2} />
     </group>
   );
 }
 
-/* ─── Solar Rays from Sun to Satellite ─── */
-function SolarRays({ satellitePos }: { satellitePos: THREE.Vector3 | null }) {
+/* ─── Sun Lens Flare ─── */
+function SunFlare() {
+  const spriteRef = useRef<THREE.Sprite>(null);
+  useFrame(({ clock }) => {
+    if (spriteRef.current) {
+      const s = 10 + Math.sin(clock.getElapsedTime() * 1.5) * 1;
+      spriteRef.current.scale.set(s, s, 1);
+    }
+  });
+  return (
+    <sprite ref={spriteRef} position={SUN_POS}>
+      <spriteMaterial color="#FFF8DC" transparent opacity={0.04} />
+    </sprite>
+  );
+}
+
+/* ─── Earth's orbit path ring (around the Sun) ─── */
+function EarthOrbitPath() {
+  return (
+    <mesh rotation={[Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[19.97, 20.03, 256]} />
+      <meshBasicMaterial color="#334466" transparent opacity={0.15} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+/* ─── Solar Rays from Sun to Satellite (world-space positions) ─── */
+function SolarRays({ satelliteWorldPos }: { satelliteWorldPos: THREE.Vector3 | null }) {
   const groupRef = useRef<THREE.Group>(null);
 
   useFrame(({ clock }) => {
@@ -157,20 +168,20 @@ function SolarRays({ satellitePos }: { satellitePos: THREE.Vector3 | null }) {
   });
 
   const lines = useMemo(() => {
-    if (!satellitePos) return [];
+    if (!satelliteWorldPos) return [];
     const result: THREE.Vector3[][] = [];
     for (let i = 0; i < 6; i++) {
       const offset = new THREE.Vector3(
-        (Math.random() - 0.5) * 0.2,
-        (Math.random() - 0.5) * 0.2,
-        (Math.random() - 0.5) * 0.2
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3
       );
-      result.push([SUN_POS.clone(), satellitePos.clone().add(offset)]);
+      result.push([SUN_POS.clone(), satelliteWorldPos.clone().add(offset)]);
     }
     return result;
-  }, [satellitePos]);
+  }, [satelliteWorldPos]);
 
-  if (!satellitePos) return null;
+  if (!satelliteWorldPos) return null;
 
   return (
     <group ref={groupRef}>
@@ -187,22 +198,32 @@ function SolarRays({ satellitePos }: { satellitePos: THREE.Vector3 | null }) {
   );
 }
 
-/* ─── City Marker ─── */
+/* ─── City Marker – only shows label for selected city ─── */
 function CityMarker({ name, lat, lng, isTarget }: { name: string; lat: number; lng: number; isTarget: boolean }) {
   const pos = useMemo(() => latLngToVector3(lat, lng, 2.02), [lat, lng]);
+
+  // Only render marker dot for non-target cities, full label for target
+  if (!isTarget) {
+    return (
+      <group position={pos}>
+        <mesh>
+          <sphereGeometry args={[0.015, 8, 8]} />
+          <meshBasicMaterial color="#38bdf8" transparent opacity={0.4} />
+        </mesh>
+      </group>
+    );
+  }
 
   return (
     <group position={pos}>
       <mesh>
-        <sphereGeometry args={[isTarget ? 0.04 : 0.02, 12, 12]} />
-        <meshBasicMaterial color={isTarget ? '#f59e0b' : '#38bdf8'} />
+        <sphereGeometry args={[0.04, 12, 12]} />
+        <meshBasicMaterial color="#f59e0b" />
       </mesh>
-      {isTarget && (
-        <PulsingRing />
-      )}
+      <PulsingRing />
       <Html distanceFactor={8} style={{ pointerEvents: 'none' }}>
-        <div className={`text-[10px] font-mono whitespace-nowrap px-1 py-0.5 rounded ${isTarget ? 'bg-amber-500/80 text-black font-bold' : 'bg-sky-900/70 text-sky-300'}`}>
-          {name}
+        <div className="text-[10px] font-mono whitespace-nowrap px-1 py-0.5 rounded bg-amber-500/80 text-black font-bold">
+          📍 {name}
         </div>
       </Html>
     </group>
@@ -226,7 +247,7 @@ function PulsingRing() {
   );
 }
 
-/* ─── Earth ─── */
+/* ─── Earth (local to EarthSystem group) ─── */
 function Earth({ targetCity }: { targetCity: string }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
@@ -239,13 +260,13 @@ function Earth({ targetCity }: { targetCity: string }) {
   ]);
 
   useFrame((_, delta) => {
-    if (meshRef.current) meshRef.current.rotation.y += delta * 0.025;
-    if (cloudRef.current) cloudRef.current.rotation.y += delta * 0.035;
+    // Earth's axial rotation
+    if (meshRef.current) meshRef.current.rotation.y += delta * 0.04;
+    if (cloudRef.current) cloudRef.current.rotation.y += delta * 0.055;
   });
 
   return (
     <group>
-      {/* Earth */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[2, 64, 64]} />
         <meshPhongMaterial
@@ -253,29 +274,27 @@ function Earth({ targetCity }: { targetCity: string }) {
           bumpMap={bumpMap}
           bumpScale={0.04}
           specularMap={specMap}
-          specular={new THREE.Color('#333333')}
-          shininess={15}
+          specular={new THREE.Color('#444444')}
+          shininess={20}
           emissiveMap={emissiveMap}
           emissive={new THREE.Color('#0a1628')}
-          emissiveIntensity={0.2}
+          emissiveIntensity={0.25}
         />
       </mesh>
-      {/* Cloud layer */}
       <mesh ref={cloudRef} scale={1.006}>
         <sphereGeometry args={[2, 48, 48]} />
-        <meshPhongMaterial color="#ffffff" transparent opacity={0.05} depthWrite={false} />
+        <meshPhongMaterial color="#ffffff" transparent opacity={0.06} depthWrite={false} />
       </mesh>
-      {/* Atmosphere – bright blue rim lit by sun */}
+      {/* Atmosphere glow */}
       <mesh scale={1.025}>
         <sphereGeometry args={[2, 64, 64]} />
-        <meshBasicMaterial color="#4499ff" transparent opacity={0.07} side={THREE.BackSide} />
+        <meshBasicMaterial color="#4499ff" transparent opacity={0.08} side={THREE.BackSide} />
       </mesh>
-      {/* Second atmosphere layer for depth */}
       <mesh scale={1.05}>
         <sphereGeometry args={[2, 64, 64]} />
-        <meshBasicMaterial color="#2266cc" transparent opacity={0.03} side={THREE.BackSide} />
+        <meshBasicMaterial color="#2266cc" transparent opacity={0.04} side={THREE.BackSide} />
       </mesh>
-      {/* City markers */}
+      {/* City markers – only selected city shows label */}
       {CITY_MARKERS.map((city) => (
         <CityMarker key={city.name} name={city.name} lat={city.lat} lng={city.lng} isTarget={city.name === targetCity} />
       ))}
@@ -283,8 +302,8 @@ function Earth({ targetCity }: { targetCity: string }) {
   );
 }
 
-/* ─── Orbit Ring ─── */
-function OrbitRing({ altitude, orbitType, locked }: { altitude: number; orbitType: string; locked: boolean }) {
+/* ─── Satellite Orbit Ring (local to Earth) ─── */
+function SatelliteOrbitRing({ altitude, orbitType, locked }: { altitude: number; orbitType: string; locked: boolean }) {
   const scale = 2 + (altitude / 35786) * 2.5;
   const tilt = orbitType === 'SSO' ? Math.PI / 6 : orbitType === 'LEO' ? Math.PI / 12 : 0;
   const ringRef = useRef<THREE.Mesh>(null);
@@ -308,12 +327,12 @@ function OrbitRing({ altitude, orbitType, locked }: { altitude: number; orbitTyp
   );
 }
 
-/* ─── Satellite ─── */
+/* ─── Satellite (local to Earth) ─── */
 function Satellite({
-  altitude, orbitType, locked, targetCity, onPositionUpdate,
+  altitude, orbitType, locked, targetCity, onLocalPositionUpdate,
 }: {
   altitude: number; orbitType: string; locked: boolean; targetCity: string;
-  onPositionUpdate: (pos: THREE.Vector3) => void;
+  onLocalPositionUpdate: (pos: THREE.Vector3) => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const panelRef1 = useRef<THREE.Mesh>(null);
@@ -321,21 +340,23 @@ function Satellite({
   const scale = 2 + (altitude / 35786) * 2.5;
   const tilt = orbitType === 'SSO' ? Math.PI / 6 : orbitType === 'LEO' ? Math.PI / 12 : 0;
 
-  const lockedPos = useMemo(() => {
+  const lockedDir = useMemo(() => {
     if (!locked) return null;
     const coords = getCityCoords(targetCity);
-    return latLngToVector3(coords.lat, coords.lng, 1).normalize().multiplyScalar(scale);
-  }, [locked, targetCity, scale]);
+    return latLngToVector3(coords.lat, coords.lng, 1).normalize();
+  }, [locked, targetCity]);
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
     const t = clock.getElapsedTime();
 
-    if (locked && lockedPos) {
+    if (locked && lockedDir) {
+      // Satellite stays above target city at orbit altitude, slight hover
+      const pos = lockedDir.clone().multiplyScalar(scale);
       groupRef.current.position.set(
-        lockedPos.x + Math.sin(t * 0.4) * 0.015,
-        lockedPos.y + Math.sin(t * 0.7) * 0.01,
-        lockedPos.z + Math.cos(t * 0.4) * 0.015
+        pos.x + Math.sin(t * 0.4) * 0.015,
+        pos.y + Math.sin(t * 0.7) * 0.01,
+        pos.z + Math.cos(t * 0.4) * 0.015
       );
     } else {
       const speed = orbitType === 'LEO' ? 0.5 : orbitType === 'MEO' ? 0.2 : 0.08;
@@ -347,25 +368,21 @@ function Satellite({
       );
     }
 
-    // Orient satellite to face Earth
     groupRef.current.lookAt(0, 0, 0);
 
-    // Panel shimmer from sunlight
     const shimmer = 0.3 + Math.sin(t * 2.5) * 0.15;
     if (panelRef1.current) (panelRef1.current.material as THREE.MeshStandardMaterial).emissiveIntensity = shimmer;
     if (panelRef2.current) (panelRef2.current.material as THREE.MeshStandardMaterial).emissiveIntensity = shimmer;
 
-    onPositionUpdate(groupRef.current.position.clone());
+    onLocalPositionUpdate(groupRef.current.position.clone());
   });
 
   return (
     <group ref={groupRef}>
-      {/* Body */}
       <mesh>
         <boxGeometry args={[0.1, 0.05, 0.05]} />
         <meshStandardMaterial color="#d0d0d0" metalness={0.85} roughness={0.15} emissive="#4488cc" emissiveIntensity={0.15} />
       </mesh>
-      {/* Solar panels */}
       <mesh ref={panelRef1} position={[0.16, 0, 0]}>
         <boxGeometry args={[0.2, 0.004, 0.12]} />
         <meshStandardMaterial color="#152d5a" metalness={0.5} roughness={0.25} emissive="#3b82f6" emissiveIntensity={0.3} />
@@ -374,12 +391,10 @@ function Satellite({
         <boxGeometry args={[0.2, 0.004, 0.12]} />
         <meshStandardMaterial color="#152d5a" metalness={0.5} roughness={0.25} emissive="#3b82f6" emissiveIntensity={0.3} />
       </mesh>
-      {/* Antenna */}
       <mesh position={[0, -0.045, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.025, 0.04, 12]} />
         <meshStandardMaterial color="#e0e0e0" metalness={0.7} roughness={0.3} />
       </mesh>
-      {/* Light */}
       <pointLight color={locked ? '#f59e0b' : '#38bdf8'} intensity={locked ? 5 : 2} distance={2} />
       {locked && (
         <Html distanceFactor={8} style={{ pointerEvents: 'none' }}>
@@ -392,20 +407,20 @@ function Satellite({
   );
 }
 
-/* ─── Beam Line ─── */
-function BeamLine({ targetCity, satellitePos }: { targetCity: string; satellitePos: THREE.Vector3 | null }) {
+/* ─── Beam Line (local to Earth system) ─── */
+function BeamLine({ targetCity, satelliteLocalPos }: { targetCity: string; satelliteLocalPos: THREE.Vector3 | null }) {
   const result = useSimulationStore((s) => s.result);
   const lineRef = useRef<any>(null);
   const impactRef = useRef<THREE.Mesh>(null);
 
   const { points, groundPoint } = useMemo(() => {
-    if (!result || !satellitePos) return { points: null, groundPoint: null };
+    if (!result || !satelliteLocalPos) return { points: null, groundPoint: null };
     const coords = getCityCoords(targetCity);
     const gp = latLngToVector3(coords.lat, coords.lng, 2.01);
-    const mid = gp.clone().add(satellitePos).multiplyScalar(0.5).multiplyScalar(1.015);
-    const curve = new THREE.QuadraticBezierCurve3(satellitePos.clone(), mid, gp);
+    const mid = gp.clone().add(satelliteLocalPos).multiplyScalar(0.5).multiplyScalar(1.015);
+    const curve = new THREE.QuadraticBezierCurve3(satelliteLocalPos.clone(), mid, gp);
     return { points: curve.getPoints(60), groundPoint: gp };
-  }, [result, targetCity, satellitePos]);
+  }, [result, targetCity, satelliteLocalPos]);
 
   useFrame(({ clock }) => {
     if (lineRef.current) lineRef.current.material.opacity = 0.5 + Math.sin(clock.getElapsedTime() * 4) * 0.3;
@@ -435,56 +450,87 @@ function BeamLine({ targetCity, satellitePos }: { targetCity: string; satelliteP
   );
 }
 
-/* ─── Sun Lens Flare (billboard sprite) ─── */
-function SunFlare() {
-  const spriteRef = useRef<THREE.Sprite>(null);
+/* ─── Earth System – orbits around the Sun ─── */
+function EarthSystem() {
+  const { input, result } = useSimulationStore();
+  const earthSystemRef = useRef<THREE.Group>(null);
+  const [satelliteLocalPos, setSatelliteLocalPos] = useState<THREE.Vector3 | null>(null);
+  const [satelliteWorldPos, setSatelliteWorldPos] = useState<THREE.Vector3 | null>(null);
+  const isLocked = !!result;
+
+  const EARTH_ORBIT_RADIUS = 20;
+  const EARTH_ORBIT_SPEED = 0.03; // slow orbital revolution
+  const AXIAL_TILT = 23.4 * (Math.PI / 180); // Earth's real axial tilt
+
   useFrame(({ clock }) => {
-    if (spriteRef.current) {
-      const s = 12 + Math.sin(clock.getElapsedTime() * 1.5) * 1;
-      spriteRef.current.scale.set(s, s, 1);
+    if (!earthSystemRef.current) return;
+    const t = clock.getElapsedTime();
+    const angle = t * EARTH_ORBIT_SPEED;
+
+    // Earth orbits the Sun in the XZ plane
+    earthSystemRef.current.position.set(
+      Math.cos(angle) * EARTH_ORBIT_RADIUS,
+      0,
+      Math.sin(angle) * EARTH_ORBIT_RADIUS
+    );
+
+    // Compute satellite world position for solar rays
+    if (satelliteLocalPos) {
+      const worldPos = satelliteLocalPos.clone();
+      earthSystemRef.current.localToWorld(worldPos);
+      setSatelliteWorldPos(worldPos);
     }
   });
+
   return (
-    <sprite ref={spriteRef} position={SUN_POS}>
-      <spriteMaterial color="#FFF8DC" transparent opacity={0.04} />
-    </sprite>
+    <>
+      {/* Solar rays in world space */}
+      <SolarRays satelliteWorldPos={satelliteWorldPos} />
+
+      <group ref={earthSystemRef}>
+        {/* Axial tilt */}
+        <group rotation={[AXIAL_TILT, 0, 0]}>
+          <Earth targetCity={input.targetCity} />
+          <SatelliteOrbitRing altitude={input.altitude} orbitType={input.orbitType} locked={isLocked} />
+          <Satellite
+            altitude={input.altitude}
+            orbitType={input.orbitType}
+            locked={isLocked}
+            targetCity={input.targetCity}
+            onLocalPositionUpdate={setSatelliteLocalPos}
+          />
+          <BeamLine targetCity={input.targetCity} satelliteLocalPos={isLocked ? satelliteLocalPos : null} />
+        </group>
+      </group>
+    </>
   );
 }
 
 /* ─── Scene ─── */
 function Scene() {
-  const { input, result } = useSimulationStore();
-  const [satellitePos, setSatellitePos] = useState<THREE.Vector3 | null>(null);
-  const isLocked = !!result;
-
   return (
     <>
-      {/* Very dim ambient – let the sun be the main light source */}
-      <ambientLight intensity={0.08} color="#1a2a4a" />
+      <ambientLight intensity={0.06} color="#1a2a4a" />
+      <Stars radius={400} depth={150} count={12000} factor={5} fade speed={0.3} />
 
-      {/* Deep space stars */}
-      <Stars radius={300} depth={100} count={10000} factor={5} fade speed={0.3} />
-
-      {/* Sun and flare */}
+      {/* Sun at center */}
       <Sun />
       <SunFlare />
 
-      {/* Earth system */}
-      <Earth targetCity={input.targetCity} />
-      <OrbitRing altitude={input.altitude} orbitType={input.orbitType} locked={isLocked} />
-      <Satellite
-        altitude={input.altitude}
-        orbitType={input.orbitType}
-        locked={isLocked}
-        targetCity={input.targetCity}
-        onPositionUpdate={setSatellitePos}
+      {/* Earth's orbital path */}
+      <EarthOrbitPath />
+
+      {/* Earth system orbiting the Sun */}
+      <EarthSystem />
+
+      <OrbitControls
+        enablePan
+        minDistance={4}
+        maxDistance={60}
+        autoRotate
+        autoRotateSpeed={0.08}
+        target={[20, 0, 0]} // initial focus on Earth's starting position
       />
-
-      {/* Energy flow visuals */}
-      <SolarRays satellitePos={satellitePos} />
-      <BeamLine targetCity={input.targetCity} satellitePos={isLocked ? satellitePos : null} />
-
-      <OrbitControls enablePan={false} minDistance={3.5} maxDistance={18} autoRotate autoRotateSpeed={0.15} />
     </>
   );
 }
@@ -492,7 +538,7 @@ function Scene() {
 export default function EarthGlobe() {
   return (
     <div className="w-full h-full bg-background rounded-lg overflow-hidden">
-      <Canvas camera={{ position: [0, 2.5, 7], fov: 45 }} gl={{ antialias: true, alpha: true }}>
+      <Canvas camera={{ position: [25, 8, 15], fov: 45 }} gl={{ antialias: true, alpha: true }}>
         <Scene />
       </Canvas>
     </div>
