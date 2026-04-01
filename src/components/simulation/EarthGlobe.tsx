@@ -153,6 +153,7 @@ function BeamLine({ targetCity, altitude }: { targetCity: string; altitude: numb
         <meshBasicMaterial color="#f59e0b" transparent opacity={0.2} />
       </mesh>
     </group>
+  );
 }
 
 export default function EarthGlobe() {
