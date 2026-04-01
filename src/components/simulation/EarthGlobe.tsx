@@ -1,9 +1,21 @@
 import { useRef, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { OrbitControls, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store/simulationStore';
 import { getCityCoords } from '@/lib/simulation';
+
+const CITY_MARKERS: { name: string; lat: number; lng: number }[] = [
+  { name: 'Mumbai', lat: 19.076, lng: 72.8777 },
+  { name: 'Delhi', lat: 28.6139, lng: 77.209 },
+  { name: 'Bangalore', lat: 12.9716, lng: 77.5946 },
+  { name: 'Chennai', lat: 13.0827, lng: 80.2707 },
+  { name: 'New York', lat: 40.7128, lng: -74.006 },
+  { name: 'London', lat: 51.5074, lng: -0.1278 },
+  { name: 'Tokyo', lat: 35.6762, lng: 139.6503 },
+  { name: 'Sydney', lat: -33.8688, lng: 151.2093 },
+  { name: 'Dubai', lat: 25.2048, lng: 55.2708 },
+];
 
 function latLngToVector3(lat: number, lng: number, radius: number): THREE.Vector3 {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -15,8 +27,40 @@ function latLngToVector3(lat: number, lng: number, radius: number): THREE.Vector
   );
 }
 
-function Earth() {
+function CityMarker({ name, lat, lng, isTarget }: { name: string; lat: number; lng: number; isTarget: boolean }) {
+  const pos = useMemo(() => latLngToVector3(lat, lng, 2.02), [lat, lng]);
+
+  return (
+    <group position={pos}>
+      <mesh>
+        <sphereGeometry args={[isTarget ? 0.04 : 0.025, 12, 12]} />
+        <meshBasicMaterial color={isTarget ? '#f59e0b' : '#38bdf8'} />
+      </mesh>
+      {isTarget && (
+        <mesh>
+          <sphereGeometry args={[0.07, 12, 12]} />
+          <meshBasicMaterial color="#f59e0b" transparent opacity={0.25} />
+        </mesh>
+      )}
+      <Html distanceFactor={8} style={{ pointerEvents: 'none' }}>
+        <div className={`text-[10px] font-mono whitespace-nowrap px-1 py-0.5 rounded ${isTarget ? 'bg-amber-500/80 text-black font-bold' : 'bg-sky-900/70 text-sky-300'}`}>
+          {name}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function Earth({ targetCity }: { targetCity: string }) {
   const meshRef = useRef<THREE.Mesh>(null);
+
+  // Load Earth textures from public CDN
+  const [colorMap, bumpMap, specMap, emissiveMap] = useLoader(THREE.TextureLoader, [
+    'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg',
+    'https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png',
+    'https://unpkg.com/three-globe@2.31.1/example/img/earth-water.png',
+    'https://unpkg.com/three-globe@2.31.1/example/img/earth-night.jpg',
+  ]);
 
   useFrame((_, delta) => {
     if (meshRef.current) {
@@ -25,44 +69,50 @@ function Earth() {
   });
 
   return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[2, 64, 64]} />
-      <meshStandardMaterial
-        color="#1a3a5c"
-        emissive="#0a1628"
-        emissiveIntensity={0.3}
-        roughness={0.8}
-        metalness={0.2}
-        wireframe={false}
-      />
+    <group>
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[2, 64, 64]} />
+        <meshPhongMaterial
+          map={colorMap}
+          bumpMap={bumpMap}
+          bumpScale={0.03}
+          specularMap={specMap}
+          specular={new THREE.Color('#222222')}
+          emissiveMap={emissiveMap}
+          emissive={new THREE.Color('#112244')}
+          emissiveIntensity={0.15}
+        />
+      </mesh>
       {/* Atmosphere glow */}
-      <mesh scale={1.02}>
+      <mesh scale={1.025}>
         <sphereGeometry args={[2, 64, 64]} />
         <meshStandardMaterial
-          color="#3b82f6"
+          color="#4488ff"
           transparent
-          opacity={0.08}
+          opacity={0.07}
           side={THREE.BackSide}
         />
       </mesh>
-      {/* Grid lines on Earth */}
-      <mesh>
-        <sphereGeometry args={[2.005, 32, 32]} />
-        <meshBasicMaterial color="#1e90ff" wireframe transparent opacity={0.1} />
-      </mesh>
-    </mesh>
+      {/* City markers */}
+      {CITY_MARKERS.map((city) => (
+        <CityMarker
+          key={city.name}
+          name={city.name}
+          lat={city.lat}
+          lng={city.lng}
+          isTarget={city.name === targetCity}
+        />
+      ))}
+    </group>
   );
 }
 
 function OrbitRing({ altitude, orbitType }: { altitude: number; orbitType: string }) {
-  const ringRef = useRef<THREE.Mesh>(null);
   const scale = 2 + (altitude / 35786) * 2.5;
-
-  const tilt = orbitType === 'SSO' ? Math.PI / 6 :
-    orbitType === 'LEO' ? Math.PI / 12 : 0;
+  const tilt = orbitType === 'SSO' ? Math.PI / 6 : orbitType === 'LEO' ? Math.PI / 12 : 0;
 
   return (
-    <mesh ref={ringRef} rotation={[Math.PI / 2 + tilt, 0, 0]}>
+    <mesh rotation={[Math.PI / 2 + tilt, 0, 0]}>
       <ringGeometry args={[scale - 0.01, scale + 0.01, 128]} />
       <meshBasicMaterial color="#38bdf8" transparent opacity={0.3} side={THREE.DoubleSide} />
     </mesh>
@@ -72,8 +122,7 @@ function OrbitRing({ altitude, orbitType }: { altitude: number; orbitType: strin
 function Satellite({ altitude, orbitType }: { altitude: number; orbitType: string }) {
   const groupRef = useRef<THREE.Group>(null);
   const scale = 2 + (altitude / 35786) * 2.5;
-  const tilt = orbitType === 'SSO' ? Math.PI / 6 :
-    orbitType === 'LEO' ? Math.PI / 12 : 0;
+  const tilt = orbitType === 'SSO' ? Math.PI / 6 : orbitType === 'LEO' ? Math.PI / 12 : 0;
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
@@ -87,12 +136,10 @@ function Satellite({ altitude, orbitType }: { altitude: number; orbitType: strin
 
   return (
     <group ref={groupRef}>
-      {/* Satellite body */}
       <mesh>
         <boxGeometry args={[0.08, 0.04, 0.04]} />
         <meshStandardMaterial color="#e0e0e0" emissive="#60a5fa" emissiveIntensity={0.5} />
       </mesh>
-      {/* Solar panels */}
       <mesh position={[0.12, 0, 0]}>
         <boxGeometry args={[0.15, 0.005, 0.08]} />
         <meshStandardMaterial color="#1e40af" emissive="#3b82f6" emissiveIntensity={0.3} />
@@ -101,7 +148,6 @@ function Satellite({ altitude, orbitType }: { altitude: number; orbitType: strin
         <boxGeometry args={[0.15, 0.005, 0.08]} />
         <meshStandardMaterial color="#1e40af" emissive="#3b82f6" emissiveIntensity={0.3} />
       </mesh>
-      {/* Glow */}
       <pointLight color="#38bdf8" intensity={2} distance={1} />
     </group>
   );
@@ -109,7 +155,7 @@ function Satellite({ altitude, orbitType }: { altitude: number; orbitType: strin
 
 function BeamLine({ targetCity, altitude }: { targetCity: string; altitude: number }) {
   const result = useSimulationStore((s) => s.result);
-  const beamRef = useRef<THREE.Line>(null);
+  const lineRef = useRef<any>(null);
 
   const points = useMemo(() => {
     if (!result) return null;
@@ -119,12 +165,9 @@ function BeamLine({ targetCity, altitude }: { targetCity: string; altitude: numb
     const satPoint = groundPoint.clone().normalize().multiplyScalar(satHeight);
     const midPoint = groundPoint.clone().add(satPoint).multiplyScalar(0.5);
     midPoint.multiplyScalar(1.05);
-
     const curve = new THREE.QuadraticBezierCurve3(satPoint, midPoint, groundPoint);
     return curve.getPoints(50);
   }, [result, targetCity, altitude]);
-
-  const lineRef = useRef<any>(null);
 
   useFrame(({ clock }) => {
     if (lineRef.current) {
@@ -143,7 +186,6 @@ function BeamLine({ targetCity, altitude }: { targetCity: string; altitude: numb
           new THREE.LineBasicMaterial({ color: '#f59e0b', transparent: true, opacity: 0.7 })
         )}
       />
-      {/* Target point glow */}
       <mesh position={points[points.length - 1]}>
         <sphereGeometry args={[0.04, 16, 16]} />
         <meshBasicMaterial color="#f59e0b" transparent opacity={0.8} />
@@ -165,13 +207,13 @@ export default function EarthGlobe() {
         camera={{ position: [0, 2, 6], fov: 50 }}
         gl={{ antialias: true, alpha: true }}
       >
-        <ambientLight intensity={0.15} />
-        <directionalLight position={[5, 3, 5]} intensity={1.2} color="#fffaf0" />
+        <ambientLight intensity={0.4} />
+        <directionalLight position={[5, 3, 5]} intensity={1.5} color="#fffaf0" />
         <pointLight position={[-5, -3, -5]} intensity={0.3} color="#38bdf8" />
 
         <Stars radius={100} depth={50} count={5000} factor={4} fade speed={1} />
 
-        <Earth />
+        <Earth targetCity={input.targetCity} />
         <OrbitRing altitude={input.altitude} orbitType={input.orbitType} />
         <Satellite altitude={input.altitude} orbitType={input.orbitType} />
         <BeamLine targetCity={input.targetCity} altitude={input.altitude} />
