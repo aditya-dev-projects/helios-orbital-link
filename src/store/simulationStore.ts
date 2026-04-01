@@ -8,6 +8,12 @@ export interface SimulationInput {
   panelArea: number;
   frequency: number;
   targetCity: string;
+  // Engineering Terminal Values added for real-time simulation
+  efficiency?: number;
+  powerOutput?: number;
+  voltage?: number;
+  current?: number;
+  temperature?: number;
 }
 
 export interface SimulationResult {
@@ -58,6 +64,12 @@ const defaultInput: SimulationInput = {
   panelArea: 10000,
   frequency: 5.8,
   targetCity: 'Mumbai',
+  // Default engineering values
+  efficiency: 25,
+  powerOutput: 1000,
+  voltage: 450,
+  current: 12.5,
+  temperature: 25,
 };
 
 export const useSimulationStore = create<SimulationState>((set) => ({
